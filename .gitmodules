@@ -1,0 +1,6 @@
+[submodule "greenhouse_inventory"]
+	path = greenhouse_inventory
+	url = https://github.com/JavaToster/greenhouse_inventory.git
+[submodule "greenhouse_authentication"]
+	path = greenhouse_authentication
+	url = https://github.com/JavaToster/greenhouse_authentication.git
