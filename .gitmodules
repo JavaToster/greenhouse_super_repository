@@ -4,3 +4,6 @@
 [submodule "greenhouse_authentication"]
 	path = greenhouse_authentication
 	url = https://github.com/JavaToster/greenhouse_authentication.git
+[submodule "greenhouse_telemetries"]
+	path = greenhouse_telemetries
+	url = https://github.com/JavaToster/greenhouse_telemetries.git
