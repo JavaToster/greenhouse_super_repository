@@ -1,0 +1,157 @@
+version: "3.9"
+
+# =========================================================
+# Greenhouse - Root Docker Compose
+# =========================================================
+# Поднимает: PostgreSQL, Redis, auth/inventory/telemetry сервисы.
+#
+# Перед запуском: скопируй .env.example -> .env и заполни реальными значениями.
+# .env НЕ должен попадать в git (проверь .gitignore).
+#
+# Запуск:    docker compose up -d --build
+# Логи:      docker compose logs -f <service_name>
+# Остановка: docker compose down            (контейнеры)
+#            docker compose down -v         (+ удалить volumes/данные)
+# =========================================================
+
+networks:
+  greenhouse-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+
+services:
+
+  # ---------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: greenhouse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      POSTGRES_DB: greenhouse_authorization   # дефолтная БД; inventory/telemetries создаются init-скриптом
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    networks:
+      - greenhouse-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SPRING_DATASOURCE_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    container_name: greenhouse-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - greenhouse-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------
+  # Microservices
+  # ---------------------------------------------------------
+
+  greenhouse-authentication:
+    image: greenhouse-authentication
+    build:
+      context: ./greenhouse_authentication
+      dockerfile: Dockerfile
+    container_name: greenhouse-authentication
+    # restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: ${AUTHENTICATION_SERVER_PORT}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${AUTHENTICATION_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      SECURITY_JWT: ${SECURITY_JWT}
+    ports:
+      - "${AUTHENTICATION_SERVER_PORT}:${AUTHENTICATION_SERVER_PORT}"
+    networks:
+      - greenhouse-net
+
+  greenhouse-inventory:
+    image: greenhouse-inventory
+    build:
+      context: ./greenhouse_inventory
+      dockerfile: Dockerfile
+    container_name: greenhouse-inventory
+    # restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      greenhouse-authentication:
+        condition: service_started
+    environment:
+      SERVER_PORT: ${INVENTORY_SERVER_PORT}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${INVENTORY_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      CLIENTS_USER: http://greenhouse-authentication:${AUTHENTICATION_SERVER_PORT}
+      SECURITY_JWT: ${SECURITY_JWT}
+      DEVICE_SECRET_ENCRYPT_KEY: ${DEVICE_SECRET_ENCRYPT_KEY}
+      DEVICE_SECRET_ENCRYPT_ALGORITHM: ${DEVICE_SECRET_ENCRYPT_ALGORITHM}
+      DEVICE_SECRET_ENCRYPT_IV_LENGTH_BYTES: ${DEVICE_SECRET_ENCRYPT_IV_LENGTH_BYTES}
+      DEVICE_SECRET_ENCRYPT_TAG_LENGTH_BITS: ${DEVICE_SECRET_ENCRYPT_TAG_LENGTH_BITS}
+
+    ports:
+      - "${INVENTORY_SERVER_PORT}:${INVENTORY_SERVER_PORT}"
+    networks:
+      - greenhouse-net
+
+  greenhouse-telemetry:
+    image: greenhouse-telemetry
+    build:
+      context: ./greenhouse_telemetries 
+      dockerfile: Dockerfile
+    container_name: greenhouse-telemetry
+    # restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      greenhouse-authentication:
+        condition: service_started
+    environment:
+      SERVER_PORT: ${TELEMETRIES_SERVER_PORT}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${TELEMETRIES_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      CLIENTS_INVENTORY_DEVICES: http://greenhouse-inventory:${INVENTORY_SERVER_PORT}
+      SECURITY_JWT: ${SECURITY_JWT}
+    ports:
+      - "${TELEMETRIES_SERVER_PORT}:${TELEMETRIES_SERVER_PORT}"
+    networks:
+      - greenhouse-net
