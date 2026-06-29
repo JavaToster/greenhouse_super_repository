@@ -91,7 +91,7 @@ services:
       REDIS_PORT: ${REDIS_PORT}
       SECURITY_JWT: ${SECURITY_JWT}
     ports:
-      - "${AUTHENTICATION_SERVER_PORT}:${AUTHENTICATION_SERVER_PORT}"
+      - "${AUTHENTICATION_SERVER_PORT}:8080"
     networks:
       - greenhouse-net
 
@@ -124,7 +124,7 @@ services:
       DEVICE_SECRET_ENCRYPT_TAG_LENGTH_BITS: ${DEVICE_SECRET_ENCRYPT_TAG_LENGTH_BITS}
 
     ports:
-      - "${INVENTORY_SERVER_PORT}:${INVENTORY_SERVER_PORT}"
+      - "${INVENTORY_SERVER_PORT}:8080"
     networks:
       - greenhouse-net
 
@@ -152,6 +152,6 @@ services:
       CLIENTS_INVENTORY_DEVICES: http://greenhouse-inventory:${INVENTORY_SERVER_PORT}
       SECURITY_JWT: ${SECURITY_JWT}
     ports:
-      - "${TELEMETRIES_SERVER_PORT}:${TELEMETRIES_SERVER_PORT}"
+      - "${TELEMETRIES_SERVER_PORT}:8080"
     networks:
       - greenhouse-net
